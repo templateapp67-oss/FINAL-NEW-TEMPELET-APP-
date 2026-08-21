@@ -25,6 +25,7 @@ A full-featured application template pre-configured with a robust PostgreSQL dat
 * **Subscription Management**: Billing structures for SaaS applications.
 * **Notifications & Settings**: Scalable notification logs and key-value app settings.
 * **Audit Trail**: Security audit logging.
+* **Gap Analysis & Remediation Tracking**: Track codebase gaps, missing items, severity, and remediation steps.
 * **Row Level Security (RLS)**: Fine-grained data access controls enabled on all public tables.
 
 ---

@@ -3,6 +3,8 @@
 -- ====================================================================
 -- Description: Complete production-ready database schema for Supabase
 -- Includes: Extensions, Enums, Tables, Foreign Keys, Triggers, RLS Policies, Indexes
+-- Modules: Core Auth Profiles, Organizations, Subscriptions, Notifications,
+--          App Settings, Audit Logs, and Gap Analysis / Missing Items Tracking.
 -- ====================================================================
 
 -- --------------------------------------------------------------------
@@ -16,27 +18,27 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- --------------------------------------------------------------------
 DO $$ BEGIN
     CREATE TYPE public.app_role AS ENUM ('admin', 'manager', 'user');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
     CREATE TYPE public.subscription_status AS ENUM ('active', 'trialing', 'past_due', 'canceled', 'unpaid');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
     CREATE TYPE public.subscription_tier AS ENUM ('free', 'pro', 'enterprise');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
     CREATE TYPE public.notification_type AS ENUM ('info', 'warning', 'success', 'error');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE public.gap_severity AS ENUM ('low', 'medium', 'high', 'critical');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE public.gap_status AS ENUM ('identified', 'in_review', 'in_progress', 'resolved', 'ignored');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- --------------------------------------------------------------------
 -- 3. TABLES
@@ -131,6 +133,51 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- GAP CATEGORIES (Modules/Features area where gaps exist)
+CREATE TABLE IF NOT EXISTS public.gap_categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- GAP ANALYSIS REPORTS
+CREATE TABLE IF NOT EXISTS public.gap_analysis_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    summary TEXT,
+    created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- MISSING ITEMS / GAPS
+CREATE TABLE IF NOT EXISTS public.missing_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    report_id UUID REFERENCES public.gap_analysis_reports(id) ON DELETE CASCADE,
+    category_id UUID REFERENCES public.gap_categories(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    severity public.gap_severity DEFAULT 'medium'::public.gap_severity NOT NULL,
+    status public.gap_status DEFAULT 'identified'::public.gap_status NOT NULL,
+    affected_component TEXT,
+    recommended_fix TEXT,
+    assigned_to UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- GAP REMEDIATION STEPS
+CREATE TABLE IF NOT EXISTS public.gap_remediation_steps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    missing_item_id UUID REFERENCES public.missing_items(id) ON DELETE CASCADE NOT NULL,
+    step_number INT NOT NULL,
+    task_description TEXT NOT NULL,
+    is_completed BOOLEAN DEFAULT false NOT NULL,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- --------------------------------------------------------------------
 -- 4. INDEXES
 -- --------------------------------------------------------------------
@@ -149,6 +196,11 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_org_id ON public.subscriptions(orga
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id_read ON public.notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action);
+
+CREATE INDEX IF NOT EXISTS idx_missing_items_report_id ON public.missing_items(report_id);
+CREATE INDEX IF NOT EXISTS idx_missing_items_status ON public.missing_items(status);
+CREATE INDEX IF NOT EXISTS idx_missing_items_severity ON public.missing_items(severity);
+CREATE INDEX IF NOT EXISTS idx_remediation_steps_item_id ON public.gap_remediation_steps(missing_item_id);
 
 -- --------------------------------------------------------------------
 -- 5. FUNCTIONS & TRIGGERS
@@ -182,6 +234,16 @@ CREATE TRIGGER set_subscriptions_updated_at
 DROP TRIGGER IF EXISTS set_app_settings_updated_at ON public.app_settings;
 CREATE TRIGGER set_app_settings_updated_at
     BEFORE UPDATE ON public.app_settings
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS set_gap_reports_updated_at ON public.gap_analysis_reports;
+CREATE TRIGGER set_gap_reports_updated_at
+    BEFORE UPDATE ON public.gap_analysis_reports
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS set_missing_items_updated_at ON public.missing_items;
+CREATE TRIGGER set_missing_items_updated_at
+    BEFORE UPDATE ON public.missing_items
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- Automatic Profile Creation Handler on Auth Signup
@@ -237,6 +299,11 @@ ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.gap_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gap_analysis_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.missing_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gap_remediation_steps ENABLE ROW LEVEL SECURITY;
 
 -- PROFILES Policies
 CREATE POLICY "Public profiles are viewable by authenticated users"
@@ -357,3 +424,25 @@ CREATE POLICY "Authenticated users can create audit log entries"
     ON public.audit_logs FOR INSERT
     TO authenticated
     WITH CHECK (user_id = auth.uid());
+
+-- GAP ANALYSIS Policies
+CREATE POLICY "Authenticated users can view gap categories"
+    ON public.gap_categories FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Authenticated users can view gap reports"
+    ON public.gap_analysis_reports FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Authenticated users can view missing items"
+    ON public.missing_items FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Authenticated users can view remediation steps"
+    ON public.gap_remediation_steps FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Users can create gap reports"
+    ON public.gap_analysis_reports FOR INSERT TO authenticated WITH CHECK (auth.uid() = created_by);
+
+CREATE POLICY "Assigned users or admins can update missing items"
+    ON public.missing_items FOR UPDATE TO authenticated
+    USING (auth.uid() = assigned_to OR EXISTS (
+        SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin', 'manager')
+    ));
