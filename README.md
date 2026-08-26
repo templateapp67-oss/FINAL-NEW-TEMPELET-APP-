@@ -15,6 +15,9 @@ A full-featured application template pre-configured with a robust PostgreSQL dat
 3. **Documentation**:
    Read the detailed database architecture and setup instructions in [`supabase/README.md`](./supabase/README.md).
 
+4. **Audit status**:
+   Review [`UNIFIED_AUDIT.md`](./UNIFIED_AUDIT.md) before deploying. The current schema has unresolved authorization and migration-readiness findings and is not yet production-ready.
+
 ---
 
 ## 🛠 Database Features
