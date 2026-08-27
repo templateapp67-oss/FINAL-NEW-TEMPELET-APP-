@@ -1,11 +1,6 @@
 -- ====================================================================
--- SUPABASE COMPLETE DATABASE SCHEMA (PRODUCTION-READY)
--- ====================================================================
--- Description: Complete production-ready database schema for Supabase
--- Includes: Extensions, Enums, Tables, Foreign Keys, Triggers, Security Helpers,
---          Idempotent RLS Policies, Indexes, and Explicit Grants.
--- Modules: Core Auth Profiles, Organizations, Subscriptions, Notifications,
---          App Settings, Audit Logs, and Gap Analysis / Missing Items Tracking.
+-- MIGRATION: 20240329000000_initial_schema.sql
+-- Description: Initial production-ready database schema for Supabase
 -- ====================================================================
 
 -- --------------------------------------------------------------------
