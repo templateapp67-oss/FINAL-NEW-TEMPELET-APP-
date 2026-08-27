@@ -10,7 +10,7 @@ The database schema is designed with security, scalability, and integration with
 
 ### 1. **Tables & Relationships**
 * **`public.profiles`**: Stores user profile information. Automatically synced with `auth.users` upon signup. Protected against role escalation.
-* **`public.organizations`**: Organization / team management. Linked to a profile owner.
+* **`public.organizations`**: Organization / team / workspace management. Automatically provisions owner admin membership upon creation.
 * **`public.organization_members`**: Junction table mapping users to organizations with role assignments.
 * **`public.subscriptions`**: Subscription lifecycle management for individual users or organizations.
 * **`public.notifications`**: User notification feed with read status and flexible metadata.
@@ -27,6 +27,9 @@ The database schema is designed with security, scalability, and integration with
 
 * **`handle_new_user()`**:
   Triggered automatically `AFTER INSERT ON auth.users`. Creates a matching `public.profiles` record with metadata, search path safety, and collision-safe unique username handling.
+
+* **`handle_new_organization()`**:
+  Triggered automatically `AFTER INSERT ON public.organizations`. Automatically inserts the workspace creator into `public.organization_members` as an `admin`.
 
 * **`handle_updated_at()`**:
   Triggered `BEFORE UPDATE` on tables with `updated_at` columns (`profiles`, `organizations`, `subscriptions`, `app_settings`, `gap_analysis_reports`, `missing_items`) to maintain accurate UTC timestamps.

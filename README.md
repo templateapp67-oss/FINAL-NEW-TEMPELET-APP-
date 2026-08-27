@@ -28,6 +28,7 @@ A full-featured application template pre-configured with a robust, production-re
 ## 🛠 Database Features
 
 * **Supabase Auth Integration**: Automatic profile creation via database triggers when users sign up.
+* **Automatic Workspace Provisioning**: Automatic admin membership creation when a user creates an organization/workspace.
 * **Role-Based Access Control**: Standardized `app_role` ENUM (`admin`, `manager`, `user`) with role-escalation protection.
 * **Multi-Tenancy Support**: Organizations/teams and organization membership tables with recursion-free security helper functions.
 * **Subscription Management**: Billing structures for SaaS applications supporting user or organization scopes.

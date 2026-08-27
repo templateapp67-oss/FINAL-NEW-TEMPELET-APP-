@@ -2,7 +2,7 @@
 
 ## Executive summary
 
-All P0, P1, and P2 security vulnerabilities, schema defects, circular RLS policy dependencies, and deployment layout issues identified in previous audits have been **completely fixed and remediated**.
+All P0, P1, and P2 security vulnerabilities, schema defects, circular RLS policy dependencies, workspace initialization errors (`undefined M_ID` and P0001 invitation failures), and deployment layout issues identified in audits have been **completely fixed and remediated**.
 
 The database schema is now packaged into reproducible migration scripts (`supabase/migrations/20240329000000_initial_schema.sql`) and configured for Supabase CLI operations (`supabase/config.toml`).
 
@@ -10,19 +10,22 @@ The database schema is now packaged into reproducible migration scripts (`supaba
 
 ## Status of Findings & Remediation Details
 
+### P0 — Workspace Provisioning & Membership Failure (FIXED)
+- **Remediation**: Added `public.handle_new_organization()` trigger function (`SECURITY DEFINER SET search_path = ''`) triggered `AFTER INSERT ON public.organizations`. Workspace creators are automatically provisioned as `admin` members in `public.organization_members`, resolving `undefined M_ID` errors and avoiding P0001 invitation errors.
+
 ### P0 — Users can grant themselves privileged roles (FIXED)
 - **Remediation**: `GRANT UPDATE` on `public.profiles` is now strictly limited to safe fields (`username`, `full_name`, `avatar_url`, `website`, `bio`, `metadata`).
 - **Policy Enforcement**: `profiles` UPDATE policy uses `private.get_user_role(auth.uid())` in `WITH CHECK` to guarantee users cannot alter their role.
 
 ### P0 — Organization RLS policies form a circular dependency (FIXED)
 - **Remediation**: Replaced cross-table policy checks with `SECURITY DEFINER` helper functions (`private.is_org_member` and `private.is_org_owner`) in a non-exposed `private` schema.
-- **Execution Controls**: `EXECUTE` on private helper functions is revoked from `PUBLIC`, `anon`, and `authenticated`, and granted only to `postgres` and `service_role`.
+- **Execution Controls**: Explicit `GRANT EXECUTE` on private helper functions given to `authenticated`, `postgres`, and `service_role`.
 
 ### P0 — Schema not deployable via CLI (FIXED)
 - **Remediation**: Added `supabase/config.toml` and created the timestamped initial migration `supabase/migrations/20240329000000_initial_schema.sql`.
 
 ### P1 — Privileged functions exposed and missing `search_path` (FIXED)
-- **Remediation**: Removed `SECURITY DEFINER` from `public.handle_updated_at()`. Pinned `SET search_path = ''` on `public.handle_new_user()` and all `private.*` helper functions.
+- **Remediation**: Removed `SECURITY DEFINER` from `public.handle_updated_at()`. Pinned `SET search_path = ''` on `public.handle_new_user()`, `public.handle_new_organization()`, and all `private.*` helper functions.
 
 ### P1 — Concurrent signups can fail during username generation (FIXED)
 - **Remediation**: Refactored `public.handle_new_user()` to catch `unique_violation` exceptions in a loop and append a deterministic suffix with retry.

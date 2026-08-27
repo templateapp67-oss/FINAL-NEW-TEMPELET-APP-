@@ -369,6 +369,26 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- Automatic Workspace/Organization Owner Membership Provisioning Handler
+CREATE OR REPLACE FUNCTION public.handle_new_organization()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.organization_members (organization_id, user_id, role)
+    VALUES (NEW.id, NEW.owner_id, 'admin'::public.app_role)
+    ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'admin'::public.app_role;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+REVOKE EXECUTE ON FUNCTION public.handle_new_organization() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.handle_new_organization() TO postgres, service_role;
+
+-- Trigger on public.organizations when a new organization is created
+DROP TRIGGER IF EXISTS on_organization_created ON public.organizations;
+CREATE TRIGGER on_organization_created
+    AFTER INSERT ON public.organizations
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_organization();
+
 -- --------------------------------------------------------------------
 -- 8. ROW LEVEL SECURITY (RLS) POLICIES (IDEMPOTENT CREATION)
 -- --------------------------------------------------------------------
