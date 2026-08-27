@@ -1,59 +1,54 @@
 # Supabase Database Documentation
 
-This directory contains the production-ready PostgreSQL database schema and configuration for **Supabase**.
+This directory contains the production-ready PostgreSQL database schema, migrations, and CLI configuration for **Supabase**.
 
 ---
 
-## 📐 Architecture Overview
+## 📐 Architecture & Security Features
 
 The database schema is designed with security, scalability, and integration with Supabase Auth at its core.
 
-### 1. **Tables & Relationships**
-* **`public.profiles`**: Stores user profile information. Automatically synced with `auth.users` upon signup.
-* **`public.organizations`**: Organization / team management. Linked to a profile owner.
-* **`public.organization_members`**: Junction table mapping users to organizations with role assignments.
-* **`public.subscriptions`**: Subscription lifecycle management (e.g., Stripe integration) for individual users or organizations.
+### 1. **Tables & Scope Constraints**
+* **`public.profiles`**: User profiles linked to `auth.users`. Includes trigger-enforced role escalation protection (`protect_profile_role()`).
+* **`public.organizations`**: Organization / team management. Linked to profile owner.
+* **`public.organization_members`**: Junction table mapping users to organizations.
+* **`public.subscriptions`**: Subscription lifecycle (Stripe integration) enforcing XOR ownership (`user_id` OR `organization_id`).
 * **`public.notifications`**: User notification feed with read status and flexible metadata.
-* **`public.app_settings`**: Key-value settings store supporting both public and user/org specific settings.
-* **`public.audit_logs`**: System activity audit trail.
+* **`public.app_settings`**: Scoped key-value settings store supporting global, user, or organization scope.
+* **`public.audit_logs`**: System audit trail using PostgreSQL `INET` column for IP addresses.
 * **`public.gap_categories`**: Functional areas / module categories where codebase gaps exist.
 * **`public.gap_analysis_reports`**: Sessions and reports summarizing codebase gap audits.
-* **`public.missing_items`**: Tracked missing components, bugs, or missing features with severity (`low`, `medium`, `high`, `critical`) and status.
-* **`public.gap_remediation_steps`**: Actionable tasks and remediation steps linked to missing items.
+* **`public.missing_items`**: Tracked missing components, bugs, or missing features with severity and status.
+* **`public.gap_remediation_steps`**: Actionable remediation steps with step sequence uniqueness and `is_completed`/`completed_at` consistency constraints.
 
 ---
 
-## ⚡ Automatic Triggers & Functions
+## ⚡ Automatic Triggers & SECURITY DEFINER Functions
 
 * **`handle_new_user()`**:
-  Triggered automatically `AFTER INSERT ON auth.users`. Creates a matching `public.profiles` record with metadata and collision-safe unique username handling.
+  Triggered automatically `AFTER INSERT ON auth.users`. Creates a matching `public.profiles` record with collision-safe unique username handling and `SET search_path = ''`.
 
 * **`handle_updated_at()`**:
-  Triggered `BEFORE UPDATE` on tables with `updated_at` columns (`profiles`, `organizations`, `subscriptions`, `app_settings`, `gap_analysis_reports`, `missing_items`) to maintain accurate UTC timestamps.
+  Triggered `BEFORE UPDATE` on tables with `updated_at` columns using `now()` and `SET search_path = ''`.
+
+* **`is_org_owner()`, `is_org_member()`, `is_admin_or_manager()`**:
+  Helper functions executing as `SECURITY DEFINER` with pinned search paths (`SET search_path = ''`) to break circular dependencies in Row Level Security (RLS) policies.
 
 ---
 
-## 🔒 Row Level Security (RLS) Policies
+## 🔒 Row Level Security (RLS) & Data API Grants
 
-All public tables have Row Level Security enabled. Policies ensure:
-* Users can only modify their own profile data.
-* Organization data is restricted to team members and owners.
-* Subscriptions are viewable only by authorized account holders.
-* Audit logs and notifications are strictly scoped to the target user.
-* Gap analysis reports and missing items are viewable by authenticated users and editable by assigned users or admins.
+All public tables have Row Level Security enabled:
+* Explicit `GRANT` statements are defined for `anon`, `authenticated`, and `service_role`.
+* Helper functions revoke `EXECUTE` from `PUBLIC` and `anon` to prevent direct unauthenticated invocation.
+* Profiles role column modifications are restricted to `admin` / `manager` roles or `service_role`.
+* Organization policies leverage `is_org_owner()` and `is_org_member()` to avoid recursive PostgreSQL query evaluation.
 
 ---
 
 ## 🚀 How to Apply the Schema
 
-### Option A: Via Supabase Dashboard SQL Editor (Recommended)
-1. Log in to your [Supabase Dashboard](https://database.new).
-2. Select your project and navigate to **SQL Editor** in the side navigation.
-3. Click **New Query**.
-4. Copy the entire contents of [`schema.sql`](./schema.sql) into the query editor.
-5. Click **Run** (or `Ctrl` / `Cmd` + `Enter`) to execute the script.
-
-### Option B: Via Supabase CLI
+### Option A: Via Supabase CLI (Recommended)
 1. Ensure the Supabase CLI is installed:
    ```bash
    npm install -g supabase
@@ -66,3 +61,8 @@ All public tables have Row Level Security enabled. Policies ensure:
    ```bash
    supabase db push
    ```
+
+### Option B: Via Supabase Dashboard SQL Editor
+1. Log in to your [Supabase Dashboard](https://database.new).
+2. Select your project and navigate to **SQL Editor**.
+3. Copy the entire contents of [`schema.sql`](./schema.sql) into the editor and click **Run**.
